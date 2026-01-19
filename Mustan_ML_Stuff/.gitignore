@@ -45,29 +45,30 @@ venv.bak/
 # Note: For sharing models with collaborators, consider:
 # 1. Use Git LFS: git lfs track "*.pth"
 # 2. Host on external storage (Google Drive, S3, HuggingFace)
-# 3. Whitelist specific models with ! (see examples below)
+# 3. Download script in README
 
-# Ignore large trained models
-*_trained.pth
-*_checkpoint*.pth
-checkpoints/
-
-# Ignore temporary/experiment models
-experiments/
-temp_models/
-
-# Keep small pretrained/example models (uncomment to whitelist)
-# !pretrainedModel.pth
-# !eye_movement_model.pth
-# !models/baseline_model.pth
-
-# Ignore other model formats if too large
-# *.onnx
-# *.pb
-# *.h5
+# Ignore ALL model files (too large for GitHub)
+*.pth
+*.pt
+*.onnx
+*.pb
+*.h5
 *.pkl
 *.pickle
 *.joblib
+*.model
+*.weights
+
+# Ignore model directories
+checkpoints/
+models/
+saved_models/
+experiments/
+temp_models/
+weights/
+
+# If you need to whitelist a specific small model, uncomment:
+# !path/to/specific_small_model.pth
 
 # Datasets
 # Large datasets should not be in git - use DVC or external storage
