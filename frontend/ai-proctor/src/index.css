@@ -1,0 +1,118 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  /* Colors */
+  --color-dark-50: #f8fafc;
+  --color-dark-100: #f1f5f9;
+  --color-dark-200: #e2e8f0;
+  --color-dark-300: #cbd5e1;
+  --color-dark-400: #94a3b8;
+  --color-dark-500: #64748b;
+  --color-dark-600: #475569;
+  --color-dark-700: #334155;
+  --color-dark-800: #1e293b;
+  --color-dark-900: #0f172a;
+
+  /* Fonts */
+  --font-display: "Space Grotesk", sans-serif;
+  --font-body: "Inter", sans-serif;
+}
+
+/* Global Styles */
+@layer base {
+  body {
+    @apply bg-white text-dark-800 font-body antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display;
+  }
+
+  * {
+    transition-property: color, background-color, border-color, transform, opacity;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 150ms;
+  }
+
+  button, a, input, select, textarea {
+    transition-duration: 200ms;
+  }
+}
+
+/* Components (Converted to @utility for v4) */
+@utility btn-primary {
+  @apply px-6 py-3 bg-dark-900 text-white rounded-lg font-medium 
+         hover:bg-dark-800 transition-all duration-200 
+         active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+@utility btn-secondary {
+  @apply px-6 py-3 bg-white text-dark-900 rounded-lg font-medium 
+         border-2 border-dark-200 hover:border-dark-900 
+         transition-all duration-200 active:scale-95;
+}
+
+@utility btn-danger {
+  @apply px-6 py-3 bg-red-600 text-white rounded-lg font-medium 
+         hover:bg-red-700 transition-all duration-200 active:scale-95;
+}
+
+@utility input-field {
+  @apply w-full px-4 py-3 bg-white border-2 border-dark-200 
+         rounded-lg focus:outline-none focus:border-dark-900 
+         transition-all duration-200 placeholder:text-dark-400;
+}
+
+@utility card {
+  @apply bg-white rounded-2xl border-2 border-dark-100 
+         shadow-sm hover:shadow-md transition-all duration-200;
+}
+
+@utility badge {
+  @apply inline-flex items-center px-3 py-1 rounded-full text-sm font-medium;
+}
+
+@utility badge-success {
+  @apply badge bg-green-100 text-green-800;
+}
+
+@utility badge-warning {
+  @apply badge bg-yellow-100 text-yellow-800;
+}
+
+@utility badge-danger {
+  @apply badge bg-red-100 text-red-800;
+}
+
+@utility badge-info {
+  @apply badge bg-blue-100 text-blue-800;
+}
+
+/* Utilities */
+@utility text-gradient {
+  @apply bg-clip-text text-transparent bg-gradient-to-r from-dark-900 to-dark-600;
+}
+
+@utility animate-delay-100 { animation-delay: 100ms; }
+@utility animate-delay-200 { animation-delay: 200ms; }
+@utility animate-delay-300 { animation-delay: 300ms; }
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
