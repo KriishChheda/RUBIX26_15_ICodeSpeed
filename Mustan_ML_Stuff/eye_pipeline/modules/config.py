@@ -9,8 +9,8 @@ class Config:
     
     # Camera Settings
     CAMERA_ID = 0
-    CAMERA_WIDTH = 1280
-    CAMERA_HEIGHT = 720
+    CAMERA_WIDTH = 640   # Reduced resolution for performance
+    CAMERA_HEIGHT = 480
     CAMERA_FPS = 30
     
     # Display Settings
@@ -23,8 +23,8 @@ class Config:
     LOG_LEVEL = "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
     
     # Performance Settings
-    MAX_FPS = 60  # Maximum FPS to process
-    FRAME_SKIP = 0  # Number of frames to skip (0 = no skip)
+    MAX_FPS = 30       # Cap FPS to match camera
+    FRAME_SKIP = 2     # Process every 3rd frame (skip 2) to reduce load
     
     # Eye Detection Settings
     EYE_DETECTION_ENABLED = True
