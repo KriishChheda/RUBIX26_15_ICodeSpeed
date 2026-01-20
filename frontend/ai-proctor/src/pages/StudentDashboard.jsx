@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { studentTestsAPI } from '../services/api';
+import { mockStudentTests } from '../services/mockData';
+
 import {
   Calendar,
   Clock,
@@ -9,9 +12,10 @@ import {
   CheckCircle,
   XCircle
 } from 'lucide-react';
-import { mockStudentTests } from '../services/mockData';
 
 const StudentDashboard = () => {
+  console.log('StudentDashboard rendering');
+  console.log('mockStudentTests:', mockStudentTests);
   const [stats, setStats] = useState({
     availableTests: 0,
     completedTests: 0,
@@ -20,22 +24,127 @@ const StudentDashboard = () => {
     recentTests: []
   });
 
-  useEffect(() => {
-    const available = mockStudentTests.filter(t => t.status === 'available').length;
-    const completed = mockStudentTests.filter(t => t.status === 'completed').length;
-    const completedTestsData = mockStudentTests.filter(t => t.status === 'completed');
-    const avgScore = completedTestsData.length > 0
-      ? completedTestsData.reduce((sum, t) => sum + (t.score / t.totalMarks * 100), 0) / completedTestsData.length
-      : 0;
+    const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-    setStats({
-      availableTests: available,
-      completedTests: completed,
-      averageScore: avgScore.toFixed(1),
-      upcomingTests: mockStudentTests.filter(t => t.status === 'available').slice(0, 3),
-      recentTests: mockStudentTests.slice(0, 3)
-    });
+  // useEffect(() => {
+  //   console.log('useEffect running');
+  //   try{
+  //   const available = mockStudentTests.filter(t => t.status === 'available').length;
+  //   const completed = mockStudentTests.filter(t => t.status === 'completed').length;
+  //   const completedTestsData = mockStudentTests.filter(t => t.status === 'completed');
+  //   const avgScore = completedTestsData.length > 0
+  //     ? completedTestsData.reduce((sum, t) => sum + (t.score / t.totalMarks * 100), 0) / completedTestsData.length
+  //     : 0;
+
+  //   setStats({
+  //     availableTests: available,
+  //     completedTests: completed,
+  //     averageScore: avgScore.toFixed(1),
+  //     upcomingTests: mockStudentTests.filter(t => t.status === 'available').slice(0, 3),
+  //     recentTests: mockStudentTests.slice(0, 3)
+  //   });
+  //   console.log('Stats set successfully');
+  //    setLoading(false);}
+  //    catch (err) {
+  //     console.error('Error in useEffect:', err);
+  //     setError(err.message);
+  //     setLoading(false);
+  //   }
+
+  // }, []);
+
+  console.log('Current state - loading:', loading, 'error:', error, 'stats:', stats);
+
+
+
+//   useEffect(() => {
+//   const fetchTests = async () => {
+//     try {
+//       const response = await studentTestsAPI.getAvailableTests();
+//       setTests(response.data); // Django returns the list in response.data
+//     } catch (err) {
+//       setError('Failed to load available tests');
+//     } finally {
+//       setLoading(false);
+//     }
+//   };
+//   fetchTests();
+// }, []);
+
+useEffect(() => {
+    const fetchTests = async () => {
+      try {
+        const response = await studentTestsAPI.getAvailableTests();
+        const tests = response.data;
+
+         const now = new Date();
+        
+        // Filter for upcoming tests: published AND start date is in the future
+        const upcomingTests = tests.filter(t => {
+          const endDate = new Date(t.end_date);
+          return t.status === 'available' && endDate > now;
+        });
+        
+        const available = tests.filter(t => {
+          const endDate = new Date(t.end_date);
+          return t.status === 'available' && endDate > now;
+        }).length;
+        const completed = tests.filter(t => t.status === 'completed').length;
+        const completedTestsData = tests.filter(t => t.status === 'completed');
+        const avgScore = completedTestsData.length > 0
+          ? completedTestsData.reduce((sum, t) => sum + (t.score / t.total_marks * 100), 0) / completedTestsData.length
+          : 0;
+        console.log("avgScore:", avgScore);
+          const recentTests = [
+          ...completedTestsData,
+          ...tests.filter(t => {
+          const endDate = new Date(t.end_date);
+          return t.status === 'available' && endDate > now;
+        })
+        ].slice(0, 3);
+
+        console.log('Fetched tests:', tests);
+        console.log('Upcoming tests:', upcomingTests);
+        console.log('Recent tests:', recentTests);
+
+        setStats({
+          availableTests: available,
+          completedTests: completed,
+          averageScore: avgScore.toFixed(1),
+          // upcomingTests: tests.filter(t => t.status === 'published').slice(0, 3),
+          upcomingTests: upcomingTests.slice(0, 3),
+          recentTests: recentTests
+        });
+      } catch (err) {
+        console.error('Failed to load tests:', err);
+        setError('Failed to load tests');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchTests();
   }, []);
+
+if (loading) {
+  console.log('Showing loading screen');
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-4 border-dark-900 border-t-transparent"></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    console.log('Showing error screen');
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-red-600">{error}</div>
+      </div>
+    );
+  }
+
+  console.log('Rendering main dashboard');
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -193,10 +302,10 @@ const StudentDashboard = () => {
                 {test.status === 'completed' && test.score && (
                   <div className="text-right">
                     <div className="text-lg font-bold text-dark-900">
-                      {((test.score / test.totalMarks) * 100).toFixed(1)}%
+                      {((test.score / test.total_marks) * 100).toFixed(1)}%
                     </div>
                     <div className="text-xs text-dark-600">
-                      {test.score}/{test.totalMarks}
+                      {test.score}/{test.total_marks}
                     </div>
                   </div>
                 )}
