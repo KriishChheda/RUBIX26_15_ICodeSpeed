@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api/';
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -54,7 +54,7 @@ export const testsAPI = {
     apiClient.get(`/tests/${testId}`),
   
   createTest: (testData) => 
-    apiClient.post('/tests', testData),
+    apiClient.post('/tests/', testData),
   
   updateTest: (testId, testData) => 
     apiClient.put(`/tests/${testId}`, testData),
@@ -69,13 +69,13 @@ export const testsAPI = {
 // Student Tests API
 export const studentTestsAPI = {
   getAvailableTests: () => 
-    apiClient.get('/student/tests'),
+    apiClient.get('/student/tests/'),
   
   startTest: (testId) => 
     apiClient.post(`/student/tests/${testId}/start`),
   
   submitTest: (testId, answers) => 
-    apiClient.post(`/student/tests/${testId}/submit`, { answers }),
+    apiClient.post(`/student/tests/${testId}/submit`, answers ),
   
   getTestResults: (testId) => 
     apiClient.get(`/student/tests/${testId}/results`),
@@ -96,13 +96,13 @@ export const proctoringAPI = {
 // Results API
 export const resultsAPI = {
   getStudentResults: (studentId) => 
-    apiClient.get(`/results/student/${studentId}`),
+    apiClient.get(`/results/student/${studentId}/`),
   
   getTestResults: (testId) => 
-    apiClient.get(`/results/test/${testId}`),
+    apiClient.get(`/results/test/${testId}/`),
   
   getAllResults: () => 
-    apiClient.get('/results'),
+    apiClient.get('/results/'),
 };
 
 export default apiClient;
