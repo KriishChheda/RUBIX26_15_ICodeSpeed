@@ -5,7 +5,9 @@ ENV/
 env/
 
 # Python Cache
-*/__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
 
 # Jupyter Notebook
 .ipynb_checkpoints
@@ -27,7 +29,5 @@ env/
 *.log
 logs/
 
-# Temporary files
-*.tmp
-temp/
-tmp/
+# Image data
+**/data/

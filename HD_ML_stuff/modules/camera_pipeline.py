@@ -11,7 +11,6 @@ import time
 from .camera_input import CameraCapture
 from .display import DisplayWindow
 from .config import Config
-from .face_detector import YOLOv8Detector
 
 class CameraPipeline:
     """Main pipeline class that orchestrates camera capture and display"""
@@ -158,76 +157,3 @@ class CameraPipeline:
             self.display.destroy_all()
         
         logging.info("Pipeline cleanup complete")
-
-
-class FaceDetectionPipeline(CameraPipeline):
-    """Pipeline with integrated YOLOv8 face detection"""
-    
-    def __init__(self, config=None):
-        """Initialize pipeline with face detection"""
-        super().__init__(config)
-        self.face_detector = None
-        self.face_count = 0
-        
-    def initialize(self):
-        """Initialize camera, display, and face detector"""
-        # Initialize base components
-        if not super().initialize():
-            return False
-        
-        # Initialize face detector
-        logging.info("Initializing face detector...")
-        
-        if self.config.FACE_MODEL_TYPE == "yolov8":
-            self.face_detector = YOLOv8Detector(
-                model_name=self.config.FACE_MODEL_NAME,
-                confidence_threshold=self.config.FACE_CONFIDENCE_THRESHOLD
-            )
-        else:
-            from modules import HaarCascadeFaceDetector
-            self.face_detector = HaarCascadeFaceDetector()
-        
-        if not self.face_detector.load_model():
-            logging.error("Failed to load face detection model")
-            return False
-        
-        logging.info("Face detector initialized successfully")
-        return True
-    
-    def process_frame(self, frame):
-        """
-        Process frame with face detection
-        
-        Args:
-            frame: Input frame from camera
-            
-        Returns:
-            Processed frame with face bounding boxes
-        """
-        if self.face_detector is None:
-            return frame
-        
-        # Detect faces and draw bounding boxes
-        processed_frame, faces = self.face_detector.process_frame(
-            frame,
-            draw=True,
-            color=self.config.FACE_BOX_COLOR,
-            thickness=self.config.FACE_BOX_THICKNESS
-        )
-        
-        # Update face count
-        self.face_count = len(faces)
-        
-        # Add face count to display
-        cv2.putText(
-            processed_frame,
-            f"Faces: {self.face_count}",
-            (10, 70),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            1,
-            (0, 255, 255),
-            2
-        )
-        
-        return processed_frame
-
