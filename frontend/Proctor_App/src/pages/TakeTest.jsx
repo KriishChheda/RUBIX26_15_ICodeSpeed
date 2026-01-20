@@ -971,6 +971,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Webcam from 'react-webcam';
 import { studentTestsAPI } from '../services/api';
+import { useNotification } from '../hooks/useNotification';
+import { useProctoring } from '../hooks/useProctoring';
 import {
   Camera,
   CameraOff,
@@ -987,7 +989,9 @@ const TakeTest = () => {
   const { testId } = useParams();
   const navigate = useNavigate();
   const webcamRef = useRef(null);
-  const isSubmittingRef = useRef(false); 
+  const isSubmittingRef = useRef(false);
+  const { notify } = useNotification();
+  const { startMonitoring, stopMonitoring, isMonitoring } = useProctoring();
 
   // Test state
   const [testData, setTestData] = useState(null);
@@ -1048,7 +1052,7 @@ const TakeTest = () => {
 
             if (switchCount >= 3 && !isSubmittingRef.current) {
               isSubmittingRef.current = true;
-              alert("Maximum tab switches reached. Your test is being submitted.");
+              notify.error("Maximum tab switches reached. Your test is being submitted.");
               
               setTestSubmitted(true); 
               setTimeout(() => {
@@ -1073,6 +1077,18 @@ const TakeTest = () => {
       return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
     }
   }, [testStarted, testSubmitted, navigate]);
+
+  // Cleanup: Stop monitoring on unmount or when test ends
+  useEffect(() => {
+    return () => {
+      if (isMonitoring) {
+        console.log('Component unmounting - stopping proctoring monitoring');
+        stopMonitoring().catch(err => {
+          console.error('Error stopping monitoring on cleanup:', err);
+        });
+      }
+    };
+  }, [isMonitoring, stopMonitoring]);
 
   // Simulated AI proctoring
   useEffect(() => {
@@ -1131,6 +1147,30 @@ const TakeTest = () => {
       setSessionId(session.id);
       setTimeRemaining(test.duration * 60); // Convert minutes to seconds
       setTestStarted(true);
+      
+      // Start proctoring monitoring if camera is enabled
+      if (session.id) {
+        try {
+          const monitoringResult = await startMonitoring({
+            sessionId: session.id,
+            faceDetect: true,
+            faceMatch: false, // Can be enabled if participant image is set
+            eyeTracking: true,
+            phoneDetect: false
+          });
+          
+          if (monitoringResult.success) {
+            console.log('Proctoring monitoring started:', monitoringResult);
+            notify.success('Proctoring system activated', 2000);
+          } else {
+            console.error('Failed to start monitoring:', monitoringResult.error);
+            notify.warning('Proctoring system failed to start - test will continue', 3000);
+          }
+        } catch (monitorError) {
+          console.error('Error starting monitoring:', monitorError);
+          notify.warning('Proctoring system error - test will continue', 3000);
+        }
+      }
       
     } catch (error) {
       console.error('Failed to start test:', error);
@@ -1229,6 +1269,18 @@ const TakeTest = () => {
 const handleSubmitTest = async () => {
   if (window.confirm('Are you sure you want to submit the test? You cannot change answers after submission.')) {
     setTestSubmitted(true);
+    
+    // Stop proctoring monitoring
+    if (isMonitoring) {
+      try {
+        const stopResult = await stopMonitoring();
+        if (stopResult.success) {
+          console.log('Proctoring monitoring stopped:', stopResult);
+        }
+      } catch (stopError) {
+        console.error('Error stopping monitoring:', stopError);
+      }
+    }
     
     try {
       // Format answers - keep as object, don't stringify

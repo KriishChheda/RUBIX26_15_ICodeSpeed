@@ -15,7 +15,13 @@ contextBridge.exposeInMainWorld('electron', {
   },
   
   receive: (channel, func) => {
-    const validChannels = ['fromMain'];
+    const validChannels = [
+      'fromMain',
+      'proctoring:output',
+      'proctoring:stopped',
+      'proctoring:alert',
+      'proctoring:notification'
+    ];
     if (validChannels.includes(channel)) {
       // Strip event as it includes `sender`
       ipcRenderer.on(channel, (event, ...args) => func(...args));
@@ -23,7 +29,18 @@ contextBridge.exposeInMainWorld('electron', {
   },
   
   invoke: (channel, ...args) => {
-    const validChannels = ['getVersion', 'saveFile', 'openFile'];
+    const validChannels = [
+      'getVersion', 
+      'saveFile', 
+      'openFile',
+      // Proctoring channels
+      'proctoring:start',
+      'proctoring:stop',
+      'proctoring:status',
+      'proctoring:getLogs',
+      'proctoring:setParticipantImage',
+      'proctoring:getAlertsJSON'
+    ];
     if (validChannels.includes(channel)) {
       return ipcRenderer.invoke(channel, ...args);
     }
