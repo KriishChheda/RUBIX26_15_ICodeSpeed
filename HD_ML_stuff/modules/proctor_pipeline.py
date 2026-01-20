@@ -10,6 +10,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from .camera_pipeline import CameraPipeline
 from .base_detector import BaseDetector
+from .proctor_logger import ProctorLogger
 
 
 class ProctorPipeline(CameraPipeline):
@@ -18,24 +19,30 @@ class ProctorPipeline(CameraPipeline):
     Manages multiple detector modules and processes frames at a configurable rate.
     """
     
-    def __init__(self, config=None, frame_skip=2):
+    def __init__(self, config=None, frame_skip=2, session_id=None):
         """
         Initialize proctoring pipeline
         
         Args:
             config: Configuration object (uses default Config if None)
             frame_skip: Number of frames to skip between processing (default: 2, process every 3rd frame)
+            session_id: Optional session ID for logging
         """
         super().__init__(config)
         
         # Detector management
-        self.detectors = []
+        self.detectors = {}  # Changed to dict for easier lookup
+        self.face_detector = None
+        self.face_matcher = None
         self.frame_skip = frame_skip
         self.frame_counter = 0
         
         # Thread pool for parallel detector execution
         self.max_workers = 4  # Maximum number of parallel detector threads
         self.executor = ThreadPoolExecutor(max_workers=self.max_workers)
+        
+        # Session logger
+        self.session_logger = ProctorLogger(session_id=session_id)
         
         # Proctoring state
         self.proctoring_results = {
@@ -47,6 +54,7 @@ class ProctorPipeline(CameraPipeline):
         
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger.info(f"Proctoring pipeline initialized with frame_skip={frame_skip}, parallel processing enabled")
+        self.session_logger.log_info(f"Proctoring pipeline initialized with frame_skip={frame_skip}")
     
     def register_detector(self, detector: BaseDetector):
         """
@@ -63,15 +71,24 @@ class ProctorPipeline(CameraPipeline):
             return False
         
         # Initialize detector if not already initialized
-        if not detector.is_initialized():
+        if not detector.initialized:
             self.logger.info(f"Initializing detector: {detector.name}")
             if not detector.load_model():
                 self.logger.error(f"Failed to initialize detector: {detector.name}")
                 return False
         
-        self.detectors.append(detector)
+        # Store detector
+        self.detectors[detector.name] = detector
+        
+        # Keep references to specific detectors for optimized pipeline
+        if detector.name == "FaceDetector" or "Face" in detector.name:
+            self.face_detector = detector
+        elif detector.name == "FaceMatcher" or "Matcher" in detector.name:
+            self.face_matcher = detector
+        
         self.proctoring_results["detections"][detector.name] = []
         self.logger.info(f"Registered detector: {detector.name}")
+        self.session_logger.log_info(f"Registered detector: {detector.name}")
         return True
     
     def unregister_detector(self, detector_name: str):
@@ -84,11 +101,11 @@ class ProctorPipeline(CameraPipeline):
         Returns:
             bool: True if detector was removed
         """
-        for i, detector in enumerate(self.detectors):
-            if detector.name == detector_name:
-                self.detectors.pop(i)
-                self.logger.info(f"Unregistered detector: {detector_name}")
-                return True
+        if detector_name in self.detectors:
+            del self.detectors[detector_name]
+            self.logger.info(f"Unregistered detector: {detector_name}")
+            self.session_logger.log_info(f"Unregistered detector: {detector_name}")
+            return True
         
         self.logger.warning(f"Detector not found: {detector_name}")
         return False
@@ -103,10 +120,7 @@ class ProctorPipeline(CameraPipeline):
         Returns:
             BaseDetector or None: The detector instance if found
         """
-        for detector in self.detectors:
-            if detector.name == detector_name:
-                return detector
-        return None
+        return self.detectors.get(detector_name)
     
     def list_detectors(self):
         """
@@ -117,11 +131,11 @@ class ProctorPipeline(CameraPipeline):
         """
         return [
             {
-                "name": d.name,
-                "enabled": d.is_enabled(),
-                "initialized": d.is_initialized()
+                "name": name,
+                "enabled": detector.enabled,
+                "initialized": detector.initialized
             }
-            for d in self.detectors
+            for name, detector in self.detectors.items()
         ]
     
     def enable_detector(self, detector_name: str):
@@ -176,8 +190,11 @@ class ProctorPipeline(CameraPipeline):
     
     def process_frame(self, frame):
         """
-        Process frame with all registered detectors in parallel (overrides CameraPipeline.process_frame)
-        Only processes every Nth frame based on frame_skip setting
+        Process frame with optimized pipeline:
+        1. Detect faces using FaceDetector
+        2. Check for multiple faces / no faces (log alerts)
+        3. For single face, spawn thread for face verification
+        4. Draw results on frame
         
         Args:
             frame: Input frame from camera
@@ -190,51 +207,198 @@ class ProctorPipeline(CameraPipeline):
         
         # Check if we should process this frame
         if self.frame_counter <= self.frame_skip:
-            # Skip processing, just return the frame
-            return frame
+            # Skip processing, just return the frame with basic overlay
+            return self._add_skip_overlay(frame)
         
         # Reset counter
         self.frame_counter = 0
         self.proctoring_results["total_frames_processed"] += 1
+        self.session_logger.log_frame_processed()
         
-        # Get enabled detectors
-        enabled_detectors = [d for d in self.detectors if d.is_enabled()]
+        annotated_frame = frame.copy()
         
-        if not enabled_detectors:
-            return frame
+        # Step 1: Get face meshes from FaceDetector
+        face_meshes = []
+        if self.face_detector and self.face_detector.enabled:
+            try:
+                face_meshes = self.face_detector.detect(frame)
+            except Exception as e:
+                self.logger.error(f"Error detecting faces: {e}")
+                self.session_logger.log_alert('detection_error', f"Face detection failed: {e}", 'critical')
         
-        # Run all detectors in parallel using thread pool
-        frame_detections = {}
-        futures = {}
+        num_faces = len(face_meshes)
+        verification_result = None
         
-        for detector in enabled_detectors:
-            future = self.executor.submit(self._run_detector, detector, frame)
-            futures[future] = detector.name
+        # Step 2: Check for alerts
+        if num_faces > 1:
+            # Multiple faces detected - LOG ALERT
+            alert_msg = f"Multiple people detected: {num_faces} faces"
+            self.logger.warning(alert_msg)
+            self.session_logger.log_alert(
+                'multiple_faces',
+                alert_msg,
+                'warning',
+                {'num_faces': num_faces}
+            )
+            self.proctoring_results["alerts"].append({
+                "timestamp": time.time(),
+                "type": "multiple_faces",
+                "message": alert_msg,
+                "severity": "warning"
+            })
+        elif num_faces == 0:
+            # No face detected - LOG ALERT
+            alert_msg = "No face detected"
+            self.logger.warning(alert_msg)
+            self.session_logger.log_alert(
+                'no_face',
+                alert_msg,
+                'warning'
+            )
+            self.proctoring_results["alerts"].append({
+                "timestamp": time.time(),
+                "type": "no_face",
+                "message": alert_msg,
+                "severity": "warning"
+            })
+        elif num_faces == 1:
+            # Single face - spawn thread for verification
+            if self.face_matcher and self.face_matcher.enabled:
+                try:
+                    # Run face verification in thread
+                    future = self.executor.submit(self._verify_face_thread, frame, face_meshes[0])
+                    # Wait for result (or timeout)
+                    try:
+                        verification_result = future.result(timeout=0.5)
+                    except Exception as e:
+                        self.logger.error(f"Face verification timeout/error: {e}")
+                        verification_result = {'matched': False, 'error': str(e)}
+                except Exception as e:
+                    self.logger.error(f"Error spawning verification thread: {e}")
+                    self.session_logger.log_alert('verification_error', f"Verification failed: {e}", 'critical')
         
-        # Collect results as they complete
-        for future in as_completed(futures):
-            detector_name, detection_results, error = future.result()
+        # Step 3: Draw face meshes on frame
+        if face_meshes and self.face_detector:
+            annotated_frame = self.face_detector.draw_faces(annotated_frame, face_meshes)
+        
+        # Step 4: Add verification status overlay (top left)
+        annotated_frame = self._add_verification_overlay(annotated_frame, num_faces, verification_result)
+        
+        return annotated_frame
+    
+    def _verify_face_thread(self, frame, face_data):
+        """
+        Thread worker for face verification
+        
+        Args:
+            frame: Input frame
+            face_data: Face mesh data
             
-            if error:
-                self.logger.error(f"Detector {detector_name} failed: {error}")
-                continue
+        Returns:
+            dict: Verification result
+        """
+        try:
+            bbox = face_data['bbox']
+            x, y, w, h = bbox['x'], bbox['y'], bbox['w'], bbox['h']
             
-            if detection_results:
-                frame_detections[detector_name] = detection_results
-                
-                # Add to history
-                self.proctoring_results["detections"][detector_name].append(detection_results)
-                
-                # Check for alerts
-                self._check_alerts(detector_name, detection_results)
+            # Extract face ROI
+            face_roi = frame[y:y+h, x:x+w]
+            
+            # Match face
+            result = self.face_matcher.match_with_details(face_roi)
+            
+            # Log result
+            if result.get('matched'):
+                self.session_logger.log_info(f"Face verified - confidence: {result.get('confidence', 0):.2f}")
+            else:
+                self.session_logger.log_alert(
+                    'face_mismatch',
+                    f"Face verification failed - distance: {result.get('distance', 'N/A')}",
+                    'warning',
+                    result
+                )
+            
+            return result
+        except Exception as e:
+            self.logger.error(f"Error in verification thread: {e}")
+            return {'matched': False, 'error': str(e)}
+    
+    def _add_skip_overlay(self, frame):
+        """Add overlay for skipped frames"""
+        overlay = frame.copy()
+        cv2.putText(
+            overlay,
+            f"Frame {self.proctoring_results['total_frames_captured']} (skipped)",
+            (10, 30),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (200, 200, 200),
+            1
+        )
+        return overlay
+    
+    def _add_verification_overlay(self, frame, num_faces, verification_result):
+        """
+        Add verification status overlay to top left
         
-        # Now draw all detection results on the frame sequentially
-        processed_frame = self._draw_all_detections(frame, frame_detections)
+        Args:
+            frame: Input frame
+            num_faces: Number of faces detected
+            verification_result: Verification result from FaceMatcher
+            
+        Returns:
+            Frame with overlay
+        """
+        overlay = frame.copy()
         
-        # Add proctoring info overlay
-        processed_frame = self._add_proctoring_overlay(processed_frame, frame_detections)
+        # Determine status text and color
+        if num_faces > 1:
+            status_text = f"ALERT: {num_faces} PEOPLE DETECTED"
+            color = (0, 0, 255)  # Red
+        elif num_faces == 0:
+            status_text = "NO FACE DETECTED"
+            color = (0, 0, 255)  # Red
+        elif verification_result:
+            if verification_result.get('matched'):
+                status_text = "VERIFIED"
+                color = (0, 255, 0)  # Green
+                confidence = verification_result.get('confidence', 0)
+                status_text += f" ({confidence:.1%})"
+            else:
+                status_text = "UNVERIFIED"
+                color = (0, 165, 255)  # Orange
+        else:
+            status_text = "CHECKING..."
+            color = (255, 255, 0)  # Yellow
         
-        return processed_frame
+        # Draw background rectangle
+        text_size = cv2.getTextSize(status_text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)[0]
+        cv2.rectangle(overlay, (5, 5), (text_size[0] + 15, 40), (0, 0, 0), -1)
+        
+        # Draw status text
+        cv2.putText(
+            overlay,
+            status_text,
+            (10, 30),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            color,
+            2
+        )
+        
+        # Add frame counter
+        stats_text = f"Frame: {self.proctoring_results['total_frames_processed']}/{self.proctoring_results['total_frames_captured']}"
+        cv2.putText(
+            overlay,
+            stats_text,
+            (10, frame.shape[0] - 10),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (255, 255, 255),
+            1
+        )
+        
+        return overlay
     
     def _draw_all_detections(self, frame, frame_detections):
         """
@@ -291,19 +455,6 @@ class ProctorPipeline(CameraPipeline):
         if detector_name == "FaceDetector":
             num_faces = detection_results.get("num_faces", 0)
             
-            # Check for spoofing attempt
-            verification = detection_results.get("verification")
-            if verification and verification.get("alert") == "spoofing_attempt":
-                alert = {
-                    "timestamp": time.time(),
-                    "detector": detector_name,
-                    "type": "spoofing_attempt",
-                    "message": f"SPOOFING DETECTED - Photo/video attack! Score: {verification.get('spoof_score')}",
-                    "severity": "critical"
-                }
-                self.proctoring_results["alerts"].append(alert)
-                self.logger.error(f"CRITICAL ALERT: {alert['message']}")
-            
             if num_faces > 1:
                 alert = {
                     "timestamp": time.time(),
@@ -348,13 +499,8 @@ class ProctorPipeline(CameraPipeline):
                 # Handle verification safely - it might be None
                 verification = results.get("verification") or {}
                 verified = verification.get("verified", False)
-                is_real = verification.get("is_real", True)
                 
-                # Check for spoofing
-                if not is_real:
-                    status_text += "SPOOF DETECTED!"
-                    color = (0, 0, 255)  # Red - critical
-                elif verified:
+                if verified:
                     status_text += f"Verified ({num_faces} faces)"
                     color = (0, 255, 0)  # Green
                 elif num_faces > 0:
@@ -427,6 +573,67 @@ class ProctorPipeline(CameraPipeline):
             summary[alert_type] += 1
         return summary
     
+    def start(self):
+        """
+        Start the proctoring pipeline (initialize camera and display)
+        
+        Returns:
+            bool: True if started successfully
+        """
+        return self.initialize()
+    
+    def stop(self):
+        """
+        Stop the proctoring pipeline (cleanup resources)
+        """
+        self.cleanup()
+    
+    def capture_frame(self):
+        """
+        Capture a frame from the camera
+        
+        Returns:
+            Frame or None if capture failed
+        """
+        if not self.camera:
+            return None
+        
+        success, frame = self.camera.read_frame()
+        if not success:
+            return None
+        
+        return frame
+    
+    def display_frame(self, frame):
+        """
+        Display a frame to the window
+        
+        Args:
+            frame: Frame to display
+        """
+        if not self.display:
+            return
+        
+        # Add FPS if enabled
+        if self.config.SHOW_FPS:
+            # Calculate FPS (simple moving average)
+            if not hasattr(self, '_fps_start_time'):
+                self._fps_start_time = time.time()
+                self._fps_frame_count = 0
+            
+            self._fps_frame_count += 1
+            elapsed = time.time() - self._fps_start_time
+            
+            if elapsed > 1.0:
+                fps = self._fps_frame_count / elapsed
+                self.display.show_frame(frame, fps=fps)
+                self._fps_frame_count = 0
+                self._fps_start_time = time.time()
+            else:
+                self.display.show_frame(frame)
+        else:
+            self.display.show_frame(frame)
+    
     def cleanup(self):
         """Cleanup resources (override from CameraPipeline)"""
         # Shutdown thread pool
@@ -451,6 +658,12 @@ class ProctorPipeline(CameraPipeline):
                 self.logger.info(f"  - {alert_type}: {count}")
         
         self.logger.info("=" * 60)
+        
+        # Close session logger and save
+        summary = self.session_logger.get_session_summary()
+        self.logger.info(f"Session logs saved to: {summary['log_file']}")
+        self.logger.info(f"Session alerts saved to: {summary['alerts_file']}")
+        self.session_logger.close()
         
         # Call parent cleanup
         super().cleanup()
