@@ -1,161 +1,33 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-pip-wheel-metadata/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
-# Virtual Environments
+# Virtual Environment
+.venv/
 venv/
-env/
 ENV/
-env.bak/
-venv.bak/
+env/
 
-# PyCharm
-.idea/
-
-# VS Code
-.vscode/
-*.code-workspace
+# Python Cache
+**/__pycache__/
+*.pyc
+*.pyo
 
 # Jupyter Notebook
 .ipynb_checkpoints
-*.ipynb
-
-# Machine Learning Models
-# Note: For sharing models with collaborators, consider:
-# 1. Use Git LFS: git lfs track "*.pth"
-# 2. Host on external storage (Google Drive, S3, HuggingFace)
-# 3. Download script in README
-
-# Ignore ALL model files (too large for GitHub)
-*.pth
-# *.pt
-*.onnx
-*.pb
-*.h5
-*.pkl
-*.pickle
-*.joblib
-*.model
-*.weights
-
-# Ignore model directories
-checkpoints/
-models/
-saved_models/
-experiments/
-temp_models/
-weights/
-
-# If you need to whitelist a specific small model, uncomment:
-# !path/to/specific_small_model.pth
-
-# Datasets
-# Large datasets should not be in git - use DVC or external storage
-datasets/
-data/
-raw_data/
-
-# Keep small config/metadata files (uncomment to whitelist)
-# !data/config.json
-# !datasets/classes.txt
-# !data/labels.csv
-
-# Ignore large data files
-# *.csv
-# *.json
-# *.xml
-*.tfrecord
-
-# YOLOv8 specific
-runs/
-yolov8*.pt
-yolov8*.yaml
-weights/
-
-# Images and Videos
-*.jpg
-*.jpeg
-*.png
-*.gif
-*.bmp
-*.tiff
-*.mp4
-*.avi
-*.mov
-*.mkv
-*.wmv
-*.flv
-
-# Exclude example images (if needed, uncomment)
-# !example.jpg
-# !sample.png
-
-# Logs
-*.log
-logs/
-*.txt
-
-# Model Analysis Output
-model_info.json
-analysis_report.json
-
-# Output files
-output/
-output_*.mp4
-tracked_*.mp4
-processed_*.mp4
-
-# Temporary files
-*.tmp
-*.temp
-*.swp
-*.swo
-*~
-
-# OS specific
-.DS_Store
-Thumbs.db
-desktop.ini
-
-# Cache
-.cache/
-*.cache
-
-# pytest
-.pytest_cache/
-.coverage
-htmlcov/
-
-# MyPy
-.mypy_cache/
-.dmypy.json
-dmypy.json
 
 # Environment variables
 .env
 .env.local
 
-# Documentation builds
-docs/_build/
-site/
+# IDE
+.vscode/
+
+# Logs
+*.log
+logs/
+
+# Image data
+**/data/
+
+# Test
+test.py
+
+# Builds
+**/Build/

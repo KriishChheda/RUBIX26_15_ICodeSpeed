@@ -258,7 +258,7 @@ class ProctorPipeline(CameraPipeline):
         if num_faces > 1:
             # Multiple faces detected - LOG ALERT
             alert_msg = f"Multiple people detected: {num_faces} faces"
-            self.logger.warning(alert_msg)
+            
             self.session_logger.log_alert(
                 'multiple_faces',
                 alert_msg,
@@ -274,7 +274,7 @@ class ProctorPipeline(CameraPipeline):
         elif num_faces == 0:
             # No face detected - LOG ALERT
             alert_msg = "No face detected"
-            self.logger.warning(alert_msg)
+            
             self.session_logger.log_alert(
                 'no_face',
                 alert_msg,
@@ -311,7 +311,6 @@ class ProctorPipeline(CameraPipeline):
                             # Check for risk alerts
                             if "RISK" in status:
                                 alert_msg = f"Suspicious eye movement detected: {detection.get('eye_name', 'Unknown')} eye - {status}"
-                                self.logger.warning(alert_msg)
                                 self.proctoring_results["alerts"].append({
                                     "timestamp": time.time(),
                                     "type": "eye_movement",
@@ -325,33 +324,33 @@ class ProctorPipeline(CameraPipeline):
                     self.logger.error(f"Error during eye detection: {e}")
                     self.session_logger.log_alert('eye_detection_error', f"Eye detection failed: {e}", 'info')
             
-            # STEP 5: Check for phone detection
-            if self.phone_detector and self.phone_detector.enabled:
-                try:
-                    # Process frame for phone detection
-                    _, phone_result = self.phone_detector.process_frame(frame, draw=False)
+        # STEP 5: Check for phone detection
+        if self.phone_detector and self.phone_detector.enabled:
+            try:
+                # Process frame for phone detection
+                _, phone_result = self.phone_detector.process_frame(frame, draw=False)
+                
+                # Check if phone was detected (alert flag)
+                if phone_result.get('alert', False):
+                    num_detections = phone_result.get('num_detections', 0)
+                    alert_msg = f"CHEATING ALERT: Phone detected - potential unauthorized device use ({num_detections} detection(s))"
                     
-                    # Check if phone was detected (alert flag)
-                    if phone_result.get('alert', False):
-                        num_detections = phone_result.get('num_detections', 0)
-                        alert_msg = f"CHEATING ALERT: Phone detected - potential unauthorized device use ({num_detections} detection(s))"
-                        self.logger.warning(alert_msg)
-                        self.session_logger.log_alert(
-                            'cheating_phone_detected',
-                            alert_msg,
-                            'critical',
-                            phone_result
-                        )
-                        self.proctoring_results["alerts"].append({
-                            "timestamp": time.time(),
-                            "type": "cheating_phone_detected",
-                            "message": alert_msg,
-                            "severity": "critical"
-                        })
-                except Exception as e:
-                    self.logger.error(f"Error during phone detection: {e}")
-                    self.session_logger.log_alert('phone_detection_error', f"Phone detection failed: {e}", 'info')
-        
+                    self.session_logger.log_alert(
+                        'cheating_phone_detected',
+                        alert_msg,
+                        'critical',
+                        phone_result
+                    )
+                    self.proctoring_results["alerts"].append({
+                        "timestamp": time.time(),
+                        "type": "cheating_phone_detected",
+                        "message": alert_msg,
+                        "severity": "critical"
+                    })
+            except Exception as e:
+                self.logger.error(f"Error during phone detection: {e}")
+                self.session_logger.log_alert('phone_detection_error', f"Phone detection failed: {e}", 'info')
+    
         # Only draw annotations if DISPLAY_FEED is enabled
         if getattr(self.config, 'DISPLAY_FEED', True):
             # Draw face meshes on frame with configuration

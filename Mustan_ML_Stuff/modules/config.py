@@ -48,8 +48,9 @@ class ProctorConfig:
     # Recommended thresholds (cosine): VGG-Face=0.40, Facenet=0.40, Facenet512=0.30, ArcFace=0.68, Dlib=0.07, SFace=0.593, OpenFace=0.10
     
     # Phone Detection Settings
-    PHONE_DETECT_ENABLE = False  # Enable phone detection (requires phone detector model)
-    PHONE_MODEL_PATH = "cv_models/phone_detector.pt"  # Path to phone detection model
+    PHONE_DETECT_ENABLE = True  # Enable phone detection (requires phone detector model)
+    PHONE_MODEL_PATH = "cv_models/phone.pt"  # Path to phone detection model
+    PHONE_CONFIDENCE_THRESHOLD = 0.5  # Minimum confidence threshold for phone detection
     
     # Proctoring Settings
     PARTICIPANT_DATA_PATH = "data/participant.png"  # Single participant reference image

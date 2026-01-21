@@ -1,0 +1,5 @@
+opencv-python >= 4.13.0.90
+mediapipe >= 0.10.31
+deepface >= 0.0.97
+tf-keras >= 2.20.1
+ultralytics >= 8.4.6
