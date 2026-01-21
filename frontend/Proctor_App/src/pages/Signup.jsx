@@ -14,7 +14,7 @@ const Signup = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  
+  const [idImage, setIdImage] = useState(null);
   const { signup } = useAuth();
   const navigate = useNavigate();
 
@@ -188,6 +188,26 @@ const Signup = () => {
                 <option value="admin">Admin</option>
               </select>
             </div>
+
+            {formData.role === 'student' && (
+                <div>
+                  <label className="block text-sm font-medium text-dark-700 mb-2">
+                    Upload Student ID Image
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => setIdImage(e.target.files[0])}
+                      className="input-field py-2.5"
+                      required
+                    />
+                    <p className="mt-1 text-xs text-dark-500">
+                      Please upload a clear image of your college or government ID for verification.
+                    </p>
+                  </div>
+                </div>
+              )}
 
             <div>
               <label className="block text-sm font-medium text-dark-700 mb-2">
