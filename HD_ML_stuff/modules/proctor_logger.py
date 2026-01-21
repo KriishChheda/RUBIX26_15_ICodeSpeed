@@ -6,9 +6,86 @@ Handles session-based logging for proctoring events and alerts
 import logging
 import json
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 import threading
+
+
+class AlertTracker:
+    """
+    Tracks alert streaks to reduce log bloat.
+    Only logs when alert type changes or periodically during long streaks.
+    """
+    def __init__(self, update_interval=1.0):
+        """
+        Initialize AlertTracker
+        
+        Args:
+            update_interval: Seconds between periodic updates during a streak
+        """
+        self.last_alert = None  # (alert_type, message) tuple
+        self.start_time = None
+        self.count = 0
+        self.last_log_time = None
+        self.update_interval = update_interval
+    
+    def should_log(self, alert_type, message):
+        """
+        Determine if alert should be logged
+        
+        Args:
+            alert_type: Type of alert
+            message: Alert message
+            
+        Returns:
+            tuple: (should_log, duration_str, is_new_streak)
+        """
+        current_key = (alert_type, message)
+        now = time.time()
+        
+        # New alert type - log end of previous streak and start new one
+        if current_key != self.last_alert:
+            duration_str = None
+            
+            # Log previous streak if exists
+            if self.last_alert is not None and self.count > 0:
+                duration = now - self.start_time
+                duration_str = f"duration: {duration:.1f}s (count: {self.count})"
+            
+            # Start new streak
+            self.last_alert = current_key
+            self.start_time = now
+            self.last_log_time = now
+            self.count = 1
+            
+            return True, duration_str, True
+        
+        # Continue streak
+        self.count += 1
+        
+        # Check if we should log periodic update
+        if now - self.last_log_time >= self.update_interval:
+            duration = now - self.start_time
+            duration_str = f"duration: {duration:.1f}s (count: {self.count})"
+            self.last_log_time = now
+            return True, duration_str, False
+        
+        return False, None, False
+    
+    def get_current_streak_info(self):
+        """Get info about current streak"""
+        if self.last_alert is None:
+            return None
+        
+        now = time.time()
+        duration = now - self.start_time
+        return {
+            'alert_type': self.last_alert[0],
+            'message': self.last_alert[1],
+            'duration': duration,
+            'count': self.count
+        }
 
 
 class ProctorLogger:
@@ -55,6 +132,9 @@ class ProctorLogger:
         # Thread safety
         self.lock = threading.Lock()
         
+        # Alert tracker for streak-based logging
+        self.alert_tracker = AlertTracker(update_interval=1.0)
+        
         # Configure file logger
         self.logger = logging.getLogger(f"ProctorLogger_{self.session_id}")
         self.logger.setLevel(logging.INFO)
@@ -82,7 +162,7 @@ class ProctorLogger:
     
     def log_alert(self, alert_type, message, severity='warning', metadata=None):
         """
-        Log an alert to the session
+        Log an alert to the session with streak detection
         
         Args:
             alert_type: Type of alert (e.g., 'multiple_faces', 'no_face', 'phone_detected')
@@ -91,6 +171,9 @@ class ProctorLogger:
             metadata: Additional metadata dictionary
         """
         with self.lock:
+            # Check if we should log this alert
+            should_log_now, duration_str, is_new_streak = self.alert_tracker.should_log(alert_type, message)
+            
             timestamp = datetime.now()
             
             alert = {
@@ -98,10 +181,11 @@ class ProctorLogger:
                 'type': alert_type,
                 'message': message,
                 'severity': severity,
-                'metadata': metadata or {}
+                'metadata': metadata or {},
+                'streak_count': self.alert_tracker.count  # Track streak in data
             }
             
-            # Add to session data
+            # Always add to session data for statistics
             self.session_data['alerts'].append(alert)
             self.session_data['statistics']['total_alerts'] += 1
             
@@ -110,17 +194,25 @@ class ProctorLogger:
                 self.session_data['statistics']['alert_types'][alert_type] = 0
             self.session_data['statistics']['alert_types'][alert_type] += 1
             
-            # Log to file only (no console output)
-            log_message = f"[{severity.upper()}] {alert_type}: {message}"
-            if metadata:
-                log_message += f" | {json.dumps(metadata)}"
-            
-            if severity == 'critical':
-                self.logger.critical(log_message)
-            elif severity == 'warning':
-                self.logger.warning(log_message)
-            else:
-                self.logger.info(log_message)
+            # Only log to file if should log now (reduces bloat)
+            if should_log_now:
+                log_message = f"[{severity.upper()}] {alert_type}: {message}"
+                
+                # Add duration info if available
+                if duration_str:
+                    log_message += f" - {duration_str}"
+                
+                # Add metadata if provided
+                if metadata:
+                    log_message += f" | {json.dumps(metadata)}"
+                
+                # Log based on severity
+                if severity == 'critical':
+                    self.logger.critical(log_message)
+                elif severity == 'warning':
+                    self.logger.warning(log_message)
+                else:
+                    self.logger.info(log_message)
     
     def log_info(self, message):
         """Log general information"""
@@ -194,6 +286,16 @@ class ProctorLogger:
         print("[DEBUG] ProctorLogger Step 0: Acquiring lock")
         with self.lock:
             print("[DEBUG] ProctorLogger Step 1: Lock acquired")
+            
+            # Log final streak if exists
+            streak_info = self.alert_tracker.get_current_streak_info()
+            if streak_info:
+                log_message = (
+                    f"[WARNING] {streak_info['alert_type']}: {streak_info['message']} - "
+                    f"duration: {streak_info['duration']:.1f}s (count: {streak_info['count']})"
+                )
+                self.logger.warning(log_message)
+            
             self.logger.info("=" * 80)
             self.logger.info("PROCTORING SESSION ENDED")
             self.logger.info(f"Duration: {(datetime.now() - self.session_start).total_seconds():.2f} seconds")

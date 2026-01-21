@@ -19,8 +19,8 @@ def main():
     ProctorConfig.PARTICIPANT_DATA_PATH = "data/participant.png"
     ProctorConfig.SHOW_ALL_FACE_LANDMARKS = False  # Enable all 478 face mesh points
     ProctorConfig.SHOW_LANDMARK_NUMBERS = False  # Set to True to see landmark numbers
-    ProctorConfig.EYE_TRACKING_ENABLE = True  # Enable eye tracking
-    ProctorConfig.PHONE_DETECT_ENABLE = False  # Phone detection not yet implemented
+    ProctorConfig.EYE_TRACKING_ENABLE = False  # Enable eye tracking
+    ProctorConfig.PHONE_DETECT_ENABLE = True  # Phone detection not yet implemented
     
     print("\n" + "="*70)
     print(" AI PROCTORING SYSTEM - AUTO-LOADING".center(70))

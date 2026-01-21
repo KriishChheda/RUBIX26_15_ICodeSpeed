@@ -201,17 +201,42 @@ export const useProctoring = () => {
 
     // Listen for parsed alerts
     window.electron.receive('proctoring:alert', (alert) => {
-      console.log('[Proctoring Alert]:', alert);
-      // Alerts are logged but not shown as notifications
+      console.log('[Proctoring Alert] RECEIVED:', JSON.stringify(alert, null, 2));
+      console.log('[Proctoring Alert] notify object:', notify);
+      
+      // Display notification immediately when alert is received
+      // The alert already contains the fixed message and category
+      if (notify && alert) {
+        const { severity, message, category } = alert;
+        
+        console.log(`[Proctoring Alert] Calling notify.${severity === 'critical' ? 'error' : 'warning'}("${message}", category: "${category}")`);
+        
+        // Map severity to notification type
+        const notificationType = severity === 'critical' ? 'error' : 'warning';
+        
+        // Display notification
+        if (notificationType === 'error') {
+          notify.error(message, 5000, category); // Critical alerts stay longer (5s)
+        } else {
+          notify.warning(message, 3000, category); // Warning alerts (3s)
+        }
+        
+        console.log('[Proctoring Alert] Notification displayed');
+      } else {
+        console.warn('[Proctoring Alert] Cannot display - notify:', !!notify, 'alert:', !!alert);
+      }
     });
 
     // Listen for notifications and display them
     window.electron.receive('proctoring:notification', (notification) => {
-      console.log('[Proctoring Notification]:', notification);
+      console.log('[Proctoring Notification] RECEIVED:', JSON.stringify(notification, null, 2));
+      console.log('[Proctoring Notification] notify object:', notify);
       
       // Display notification using the notification system
       if (notify && notification.notification) {
         const { type, message, category } = notification.notification;
+        
+        console.log(`[Proctoring Notification] Calling notify.${type}("${message}", category: "${category}")`);
         
         // Use category for deduplication (e.g., 'no_face', 'eye_movement', etc.)
         // This prevents spam of the same alert type
@@ -226,6 +251,10 @@ export const useProctoring = () => {
         } else {
           notify.info(message, 3000, category);
         }
+        
+        console.log('[Proctoring Notification] Notification displayed');
+      } else {
+        console.warn('[Proctoring Notification] Cannot display - notify:', !!notify, 'notification.notification:', !!(notification && notification.notification));
       }
     });
   }, [isElectron, notify]);

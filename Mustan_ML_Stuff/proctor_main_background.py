@@ -27,7 +27,7 @@ def main():
     print("\n" + "="*70)
     print(" AI PROCTORING SYSTEM - BACKGROUND MODE".center(70))
     print("="*70)
-    print("\n⚠️  DISPLAY IS DISABLED - RUNNING IN BACKGROUND")
+    print("\n DISPLAY IS DISABLED - RUNNING IN BACKGROUND")
     print("   Webcam feed will be processed without showing frames")
     print("   All alerts and logs will be saved to disk\n")
     
@@ -52,7 +52,7 @@ def main():
     
     print("-"*70)
     print("\nMODE:")
-    print(f"  • Display Feed: {'ENABLED' if ProctorConfig.DISPLAY_FEED else '⚠️  DISABLED (Background Mode)'}")
+    print(f"  • Display Feed: {'ENABLED' if ProctorConfig.DISPLAY_FEED else ' DISABLED (Background Mode)'}")
     print("\nCONTROLS:")
     print("  • Press CTRL+C to stop and generate report")
     
@@ -88,9 +88,9 @@ def main():
     try:
         proctor.run()
     except KeyboardInterrupt:
-        print("\n\n⚠️  Proctoring session interrupted by user.")
+        print("\n\n Proctoring session interrupted by user.")
     except Exception as e:
-        print(f"\n\n❌ ERROR: {e}")
+        print(f"\n\n ERROR: {e}")
         import traceback
         traceback.print_exc()
     

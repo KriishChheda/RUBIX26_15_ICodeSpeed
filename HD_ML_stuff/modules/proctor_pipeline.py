@@ -12,6 +12,7 @@ from .proctor_logger import ProctorLogger
 from .face_detector import FaceDetector
 from .face_matcher import FaceMatcher
 from .eye_detector import EyeMovementDetector
+from .phone_detector import PhoneDetector
 
 
 class ProctorPipeline(CameraPipeline):
@@ -141,10 +142,20 @@ class ProctorPipeline(CameraPipeline):
         if getattr(self.config, 'PHONE_DETECT_ENABLE', False):
             try:
                 self.logger.info("Loading Phone Detector...")
-                # Placeholder for phone detector - implement when ready
-                # from .phone_detector import PhoneDetector
-                # self.phone_detector = PhoneDetector(...)
-                self.logger.warning("Phone Detector not yet implemented")
+                self.phone_detector = PhoneDetector(
+                    name="PhoneDetector",
+                    enabled=True,
+                    model_path=getattr(self.config, 'PHONE_MODEL_PATH', 'cv_models/phone.pt'),
+                    confidence_threshold=getattr(self.config, 'PHONE_CONFIDENCE_THRESHOLD', 0.5)
+                )
+                
+                if self.phone_detector.load_model():
+                    self.detectors['PhoneDetector'] = self.phone_detector
+                    self.proctoring_results["detections"]['PhoneDetector'] = []
+                    self.logger.info("✓ Phone Detector loaded successfully")
+                else:
+                    self.logger.error("✗ Failed to load Phone Detector")
+                    self.phone_detector = None
             except Exception as e:
                 self.logger.error(f"Error loading Phone Detector: {e}")
                 self.phone_detector = None
@@ -247,7 +258,7 @@ class ProctorPipeline(CameraPipeline):
         if num_faces > 1:
             # Multiple faces detected - LOG ALERT
             alert_msg = f"Multiple people detected: {num_faces} faces"
-            self.logger.warning(alert_msg)
+            
             self.session_logger.log_alert(
                 'multiple_faces',
                 alert_msg,
@@ -263,7 +274,7 @@ class ProctorPipeline(CameraPipeline):
         elif num_faces == 0:
             # No face detected - LOG ALERT
             alert_msg = "No face detected"
-            self.logger.warning(alert_msg)
+            
             self.session_logger.log_alert(
                 'no_face',
                 alert_msg,
@@ -313,6 +324,39 @@ class ProctorPipeline(CameraPipeline):
                 except Exception as e:
                     self.logger.error(f"Error during eye detection: {e}")
                     self.session_logger.log_alert('eye_detection_error', f"Eye detection failed: {e}", 'info')
+
+            # STEP 5: Check for phone detection
+            if self.phone_detector and self.phone_detector.enabled:
+                try:
+                    print(1)
+                    # Process frame for phone detection
+                    _, phone_result = self.phone_detector.process_frame(frame, draw=False)
+                    print(2)
+                    # Check if phone was detected (alert flag)
+                    if phone_result.get('alert', False):
+                        print(3)
+                        num_detections = phone_result.get('num_detections', 0)
+                        print(4)
+                        alert_msg = f"CHEATING ALERT: Phone detected - potential unauthorized device use ({num_detections} detection(s))"
+                        self.logger.warning(alert_msg)
+                        self.session_logger.log_alert(
+                            'cheating_phone_detected',
+                            alert_msg,
+                            'critical',
+                            phone_result
+                        )
+                        print(5)
+                        self.proctoring_results["alerts"].append({
+                            "timestamp": time.time(),
+                            "type": "cheating_phone_detected",
+                            "message": alert_msg,
+                            "severity": "critical"
+                        })
+                        print(6)
+                except Exception as e:
+                    self.logger.error(f"Error during phone detection: {e}")
+                    self.session_logger.log_alert('phone_detection_error', f"Phone detection failed: {e}", 'info')
+                    
         
         # Only draw annotations if DISPLAY_FEED is enabled
         if getattr(self.config, 'DISPLAY_FEED', True):

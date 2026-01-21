@@ -25,7 +25,7 @@ class PhoneDetector(BaseDetector):
         self,
         name="PhoneDetector",
         enabled=True,
-        model_path="cv_models/phone_detector",
+        model_path="cv_models/phone.pt",
         confidence_threshold=0.5
     ):
         """
@@ -53,23 +53,31 @@ class PhoneDetector(BaseDetector):
             bool: True if model loaded successfully
         """
         try:
-            # TODO: Load your phone detection model here
-            # Example:
-            # self.model = cv2.dnn.readNet(f"{self.model_path}/model.weights", 
-            #                              f"{self.model_path}/model.cfg")
-            # or
-            # from ultralytics import YOLO
-            # self.model = YOLO(f"{self.model_path}/phone_detector.pt")
+            from ultralytics import YOLO
+            import os
             
-            # For this template, we'll just simulate
-            self.model = "SimulatedModel"  # Replace with actual model loading
+            # Check if model file exists
+            if not os.path.exists(self.model_path):
+                self.logger.error(f"Model file not found: {self.model_path}")
+                return False
+            
+            # Load the YOLO model
+            self.model = YOLO(self.model_path)
+            
+            # Verify model loaded correctly
+            if self.model is None:
+                self.logger.error(f"YOLO model is None after loading")
+                return False
             
             self.initialized = True
-            self.logger.info(f"{self.name} model loaded successfully")
+            self.logger.info(f"{self.name} model loaded successfully from {self.model_path}")
+            self.logger.info(f"Model info: {type(self.model)}")
             return True
             
         except Exception as e:
             self.logger.error(f"Error loading {self.name} model: {e}")
+            self.initialized = False
+            self.model = None
             return False
     
     def detect_phones(self, frame):
@@ -85,22 +93,35 @@ class PhoneDetector(BaseDetector):
         if not self.initialized or self.model is None:
             return []
         
-        try:
-            # TODO: Implement actual phone detection logic here
-            # Example with YOLO:
-            # results = self.model(frame)
-            # detections = []
-            # for r in results:
-            #     boxes = r.boxes
-            #     for box in boxes:
-            #         if box.conf[0] > self.confidence_threshold:
-            #             x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-            #             conf = box.conf[0].cpu().numpy()
-            #             detections.append((int(x1), int(y1), int(x2), int(y2), float(conf)))
-            # return detections
-            
-            # For template: return empty list (no detections)
+        # Validate frame
+        if frame is None or frame.size == 0:
+            self.logger.warning("Invalid frame provided to phone detector")
             return []
+        
+        try:
+            # Run YOLO inference
+            results = self.model(frame, verbose=False)
+            
+            # Check if results is None or empty
+            if results is None:
+                self.logger.warning("YOLO model returned None - model may not be properly loaded")
+                return []
+            
+            detections = []
+            
+            for r in results:
+                # Check if boxes exist
+                if not hasattr(r, 'boxes') or r.boxes is None:
+                    continue
+                    
+                boxes = r.boxes
+                for box in boxes:
+                    conf = float(box.conf[0])
+                    if conf > self.confidence_threshold:
+                        x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                        detections.append((int(x1), int(y1), int(x2), int(y2), conf))
+            
+            return detections
             
         except Exception as e:
             self.logger.error(f"Error detecting phones: {e}")

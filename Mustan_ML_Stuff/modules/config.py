@@ -65,7 +65,8 @@ class ProctorConfig:
     SAVE_SESSION_LOGS = True  # Save session logs to file
     LOG_ALERTS_ONLY = True  # Only log alert messages (no info/debug to console)
     
-    # Alert Settings
+    # Alert Communication Settings
+    ALERT_STATE_FILE_NAME = "alert_state.txt"  # File name for alert state communication
     ALERT_COOLDOWN_SECONDS = 5  # Minimum time between same alert types
     
     @classmethod

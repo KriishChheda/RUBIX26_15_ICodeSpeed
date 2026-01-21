@@ -49,7 +49,8 @@ class ProctorConfig:
     
     # Phone Detection Settings
     PHONE_DETECT_ENABLE = False  # Enable phone detection (requires phone detector model)
-    PHONE_MODEL_PATH = "cv_models/phone_detector.pt"  # Path to phone detection model
+    PHONE_MODEL_PATH = "cv_models/phone.pt"  # Path to phone detection model
+    PHONE_CONFIDENCE_THRESHOLD = 0.5  # Minimum confidence threshold for phone detection
     
     # Proctoring Settings
     PARTICIPANT_DATA_PATH = "data/participant.png"  # Single participant reference image

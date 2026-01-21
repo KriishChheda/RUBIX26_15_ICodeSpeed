@@ -10,6 +10,7 @@ from .face_detector import FaceDetector
 from .face_matcher import FaceMatcher
 from .eye_detector import EyeMovementDetector
 from .proctor_logger import ProctorLogger
+from .alert_communicator import AlertCommunicator
 from .camera_pipeline import CameraPipeline
 from .proctor_pipeline import ProctorPipeline
 
@@ -22,6 +23,7 @@ __all__ = [
     'FaceMatcher',
     'EyeMovementDetector',
     'ProctorLogger',
+    'AlertCommunicator',
     'CameraPipeline',
     'ProctorPipeline'
 ]

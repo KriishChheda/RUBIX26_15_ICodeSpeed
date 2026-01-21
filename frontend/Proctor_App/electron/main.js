@@ -4,29 +4,47 @@ const cameraMonitor = require('./utils/camMonitorSpawn');
 const processTerminator = require('./utils/processTerminator');
 const logWatcher = require('./utils/logWatcher');
 
+// Load environment variables
+require('dotenv').config({ path: path.join(__dirname, '../.env') });
+
 // Determine if running in development or production
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+
+// Configuration from environment variables
+const config = {
+  devServerPort: process.env.VITE_DEV_SERVER_PORT || '5173',
+  windowWidth: parseInt(process.env.WINDOW_WIDTH || '1400'),
+  windowHeight: parseInt(process.env.WINDOW_HEIGHT || '900'),
+  windowMinWidth: parseInt(process.env.WINDOW_MIN_WIDTH || '1200'),
+  windowMinHeight: parseInt(process.env.WINDOW_MIN_HEIGHT || '700'),
+  enableDevTools: process.env.ENABLE_DEVTOOLS === 'true',
+  enableKioskMode: process.env.ENABLE_KIOSK_MODE === 'true',
+  enableWebSecurity: process.env.ENABLE_WEB_SECURITY !== 'false',
+  enableContextIsolation: process.env.ENABLE_CONTEXT_ISOLATION !== 'false',
+  enableNodeIntegration: process.env.ENABLE_NODE_INTEGRATION === 'true',
+  enableMonitor: process.env.ENABLE_MONITOR !== 'false'
+};
 
 let mainWindow = null;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1400,
-    height: 900,
-    minWidth: 1200,
-    minHeight: 700,
+    width: config.windowWidth,
+    height: config.windowHeight,
+    minWidth: config.windowMinWidth,
+    minHeight: config.windowMinHeight,
+    fullscreen: config.enableKioskMode,
+    kiosk: config.enableKioskMode,
     webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
+      nodeIntegration: config.enableNodeIntegration,
+      contextIsolation: config.enableContextIsolation,
       preload: path.join(__dirname, 'preload.js'),
-      // Enable web security
-      webSecurity: true,
-      // Allow media access for webcam
+      webSecurity: config.enableWebSecurity,
       enableWebSQL: false,
     },
     titleBarStyle: 'default',
     backgroundColor: '#0f172a',
-    show: false, // Don't show until ready
+    show: false,
     icon: path.join(__dirname, '../public/vite.svg')
   });
 
@@ -38,8 +56,11 @@ function createWindow() {
   // Load the app
   if (isDev) {
     // In development, load from Vite dev server
-    mainWindow.loadURL('http://localhost:5173');
-    mainWindow.webContents.openDevTools();
+    mainWindow.loadURL(`http://localhost:${config.devServerPort}`);
+    // Open DevTools in development if enabled
+    if (config.enableDevTools) {
+      mainWindow.webContents.openDevTools();
+    }
   } else {
     // In production, load the built files
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
@@ -63,8 +84,26 @@ ipcMain.handle('getVersion', () => {
 // Proctoring IPC handlers
 ipcMain.handle('proctoring:start', async (event, options) => {
   try {
-    // Initialize camera monitor if not already done
-    const validation = cameraMonitor.initialize(options.config);
+    // Check if monitoring is enabled
+    if (!config.enableMonitor) {
+      return {
+        success: false,
+        error: 'Monitoring is disabled in configuration'
+      };
+    }
+
+    // Initialize camera monitor with environment config
+    const monitorConfig = {
+      pythonPath: process.env.PYTHON_EXECUTABLE_PATH || undefined,
+      scriptPath: process.env.PYTHON_SCRIPT_NAME 
+        ? path.join(process.env.PYTHON_PROJECT_PATH || 'Mustan_ML_stuff', process.env.PYTHON_SCRIPT_NAME)
+        : undefined,
+      participantImagePath: process.env.PARTICIPANT_IMAGE_PATH
+        ? path.join(process.env.PYTHON_PROJECT_PATH || 'Mustan_ML_stuff', process.env.PARTICIPANT_IMAGE_PATH)
+        : undefined
+    };
+
+    const validation = cameraMonitor.initialize(monitorConfig);
     
     if (!validation.success) {
       return {
@@ -74,14 +113,15 @@ ipcMain.handle('proctoring:start', async (event, options) => {
       };
     }
 
-    // Start monitoring
+    // Start monitoring with feature flags from environment
     const result = cameraMonitor.startMonitoring({
       sessionId: options.sessionId,
-      faceDetect: options.faceDetect,
-      faceMatch: options.faceMatch,
-      eyeTracking: options.eyeTracking,
-      phoneDetect: options.phoneDetect,
-      watchLogs: true,
+      faceDetect: process.env.ENABLE_FACE_DETECTION !== 'false' && options.faceDetect,
+      faceMatch: process.env.ENABLE_FACE_MATCHING !== 'false' && options.faceMatch,
+      eyeTracking: process.env.ENABLE_EYE_TRACKING !== 'false' && options.eyeTracking,
+      phoneDetect: process.env.ENABLE_PHONE_DETECTION === 'true' && options.phoneDetect,
+      watchAlerts: true,
+      watchLogs: false,
       onOutput: (data, type) => {
         // Send output to renderer if needed
         if (mainWindow && !mainWindow.isDestroyed()) {
@@ -222,7 +262,7 @@ app.on('window-all-closed', () => {
     app.quit();
   }
 });
-
+`http://localhost:${config.devServerPort}`
 // Handle app quitting
 app.on('before-quit', async () => {
   // Stop all proctoring processes

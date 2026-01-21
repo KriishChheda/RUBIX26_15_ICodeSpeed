@@ -9,11 +9,13 @@
     "build:win": "vite build && electron-builder --win",
     "build:mac": "vite build && electron-builder --mac",
     "build:linux": "vite build && electron-builder --linux",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test:python": "node test-python-env.js"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.18",
     "axios": "^1.13.2",
+    "dotenv": "^16.4.7",
     "lucide-react": "^0.562.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
