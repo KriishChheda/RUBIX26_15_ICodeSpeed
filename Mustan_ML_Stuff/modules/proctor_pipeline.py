@@ -147,7 +147,8 @@ class ProctorPipeline(CameraPipeline):
                 self.logger.info("Loading Eye Movement Detector (MediaPipe-based)...")
                 self.eye_detector = EyeMovementDetector(
                     name="EyeMovementDetector",
-                    enabled=True
+                    enabled=True,
+                    config=self.config  # Pass config to eye detector
                 )
                 
                 if self.eye_detector.load_model():

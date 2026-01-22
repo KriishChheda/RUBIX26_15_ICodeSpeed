@@ -1,0 +1,26 @@
+# Requirements for Eye Detection and Tracking Pipeline
+
+# YOLOv8 and dependencies
+ultralytics>=8.0.0
+
+# Computer Vision
+opencv-python>=4.8.0
+opencv-contrib-python>=4.8.0
+
+# Face/Eye Detection
+mediapipe>=0.10.0
+
+# Core dependencies
+numpy>=1.24.0
+torch>=2.0.0
+torchvision>=0.15.0
+
+# Optional but recommended
+pillow>=10.0.0
+matplotlib>=3.7.0
+pandas>=2.0.0
+
+ultralytics
+mediapipe==0.10.14
+numpy>=1.24.0
+opencv-python

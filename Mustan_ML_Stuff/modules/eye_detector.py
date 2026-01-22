@@ -1,7 +1,7 @@
 """
 Eye Movement Detection Module - MediaPipe Based
-Uses MediaPipe face mesh landmarks to detect and track eye movements
-Analyzes pupil position and eye geometry for risk assessment
+Uses MediaPipe Face Landmarker with 478 landmarks for superior eye and iris tracking
+Analyzes iris position and eye geometry for gaze direction detection
 """
 
 import logging
@@ -12,84 +12,95 @@ from datetime import datetime
 from pathlib import Path
 from .base_detector import BaseDetector
 
+# MediaPipe eye and iris landmark indices (478-point face mesh)
+# These indices match the FaceDetector's MediaPipe Face Mesh output
+LEFT_EYE = [33, 133, 160, 159, 158, 144, 145, 153]
+RIGHT_EYE = [362, 263, 387, 386, 385, 380, 374, 373]
+LEFT_IRIS = [468, 469, 470, 471, 472]
+RIGHT_IRIS = [473, 474, 475, 476, 477]
+
 
 class EyeMovementDetector(BaseDetector):
-    """Detects and tracks eye movements using MediaPipe face mesh landmarks"""
+    """Detects and tracks eye movements using MediaPipe Face Landmarker (Tasks API)"""
     
-    def __init__(self, name="EyeMovementDetector", enabled=True):
+    def __init__(self, name="EyeMovementDetector", enabled=True, config=None):
         """
         Initialize Eye Movement Detector
         
         Args:
             name: Name of the detector
             enabled: Whether detector is enabled
+            config: Configuration object with eye tracking settings
         """
         super().__init__(name, enabled)
         
-        # MediaPipe eye landmark indices (478-point face mesh: 468 face + 10 iris)
-        # We'll use these key points for eye tracking:
-        # Left Eye: outer corner (33), inner corner (133), top (159), bottom (145)
-        # Right Eye: outer corner (362), inner corner (263), top (386), bottom (374)
-        # Iris landmarks: Left iris center (468-472), Right iris center (473-477)
+        # Configuration
+        self.config = config
         
-        self.left_eye_indices = {
-            'outer': 33,
-            'inner': 133,
-            'top': 159,
-            'bottom': 145,
-            'iris_center': 468  # Left iris center landmark
-        }
-        
-        self.right_eye_indices = {
-            'outer': 362,
-            'inner': 263,
-            'top': 386,
-            'bottom': 374,
-            'iris_center': 473  # Right iris center landmark
-        }
-        
-        # Risk analysis thresholds
-        self.vertical_threshold = 0.15
-        self.horizontal_min = 0.3
-        self.horizontal_max = 0.7
+        # Detection thresholds from config
+        if config:
+            # Detection thresholds from config
+            self.horizontal_threshold = getattr(config, 'EYE_HORIZONTAL_THRESHOLD', 0.30)
+            self.vertical_down_threshold = getattr(config, 'EYE_VERTICAL_DOWN_THRESHOLD', 0.10)
+            self.vertical_up_threshold = getattr(config, 'EYE_VERTICAL_UP_THRESHOLD', -0.30)
+            self.closed_threshold = getattr(config, 'EYE_CLOSED_THRESHOLD', 0.15)
+            
+            # MediaPipe confidence settings
+            self.face_detection_confidence = getattr(config, 'EYE_FACE_DETECTION_CONFIDENCE', 0.5)
+            self.face_presence_confidence = getattr(config, 'EYE_FACE_PRESENCE_CONFIDENCE', 0.5)
+            self.tracking_confidence = getattr(config, 'EYE_TRACKING_CONFIDENCE', 0.5)
+            
+            # Visualization settings
+            self.draw_landmarks = getattr(config, 'EYE_DRAW_LANDMARKS', True)
+            self.debug_mode = getattr(config, 'EYE_DEBUG_MODE', False)
+            
+            # Alert settings
+            self.enable_looking_down_alert = getattr(config, 'EYE_ENABLE_LOOKING_DOWN_ALERT', True)
+            self.enable_looking_away_alert = getattr(config, 'EYE_ENABLE_LOOKING_AWAY_ALERT', True)
+            self.enable_no_face_alert = getattr(config, 'EYE_ENABLE_NO_FACE_ALERT', True)
+        else:
+            # Default values
+            self.model_path = 'cv_models/face_landmarker.task'
+            self.model_url = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task'
+            self.horizontal_threshold = 0.30
+            self.vertical_down_threshold = 0.10
+            self.vertical_up_threshold = -0.30
+            self.closed_threshold = 0.15
+            self.face_detection_confidence = 0.5
+            self.face_presence_confidence = 0.5
+            self.tracking_confidence = 0.5
+            self.draw_landmarks = True
+            self.debug_mode = False
+            self.enable_looking_down_alert = True
+            self.enable_looking_away_alert = True
+            self.enable_no_face_alert = True
         
         # Visualization colors
         self.keypoint_colors = {
-            'outer': (255, 0, 255),    # Magenta
-            'inner': (0, 255, 255),    # Yellow
-            'iris': (0, 255, 0),       # Green
-            'eye_contour': (255, 128, 0)  # Orange
+            'eye_bbox': (0, 255, 0),     # Green for safe
+            'eye_bbox_risk': (0, 0, 255), # Red for risk
+            'eye_center': (255, 255, 0),  # Yellow
+            'iris_center': (0, 255, 255), # Cyan
+            'iris_points': (255, 0, 255)  # Magenta
         }
-        
-        # Risk status colors
-        self.risk_colors = {
-            'SAFE': (0, 255, 0),       # Green
-            'RISK': (0, 0, 255),       # Red
-            'THINKING': (255, 165, 0),  # Orange
-            'CLOSED': (128, 128, 128)   # Gray
-        }
-        
-        # Calibration state
-        self.is_calibrated = False
-        self.should_calibrate = False
-        self.calibration_offsets = {}  # {'Left': 0.0, 'Right': 0.0}
         
         # Eye movement logging
         self.eye_movement_logger = None
         self.eye_log_file = None
         self.session_id = None
         
-        self.logger.info(f"Eye Movement Detector initialized (MediaPipe-based)")
+        self.logger.info(f"Eye Movement Detector initialized (MediaPipe Face Landmarker)")
         
+    
     def load_model(self):
         """
-        Load model - No external model needed as we use MediaPipe face mesh
+        Initialize eye detector (no separate model needed, uses FaceDetector's face mesh)
         
         Returns:
             bool: True (always successful)
         """
         self.initialized = True
-        self.logger.info("Eye Movement Detector ready (using MediaPipe face mesh)")
+        self.logger.info("Eye Movement Detector initialized (uses shared FaceDetector face mesh)")
         return True
     
     def setup_eye_movement_logger(self, log_dir='logs/eye_movements', session_id=None):
@@ -147,243 +158,293 @@ class EyeMovementDetector(BaseDetector):
         """Reset calibration data"""
         self.is_calibrated = False
         self.calibration_offsets = {}
-        self.logger.info("Calibration reset")
+    
+    def _get_eye_aspect_ratio(self, eye_landmarks):
+        """
+        Calculate Eye Aspect Ratio (EAR) for blink detection
+        
+        Args:
+            eye_landmarks: Array of eye landmark coordinates
+            
+        Returns:
+            float: Eye aspect ratio
+        """
+        # Vertical distances
+        v1 = np.linalg.norm(eye_landmarks[1] - eye_landmarks[5])
+        v2 = np.linalg.norm(eye_landmarks[2] - eye_landmarks[4])
+        
+        # Horizontal distance
+        h = np.linalg.norm(eye_landmarks[0] - eye_landmarks[3])
+        
+        # EAR formula
+        ear = (v1 + v2) / (2.0 * h + 1e-6)
+        return ear
+    
+    def _get_gaze_direction(self, eye_center, iris_center, eye_width, eye_height):
+        """
+        Determine gaze direction based on iris position relative to eye center
+        
+        Args:
+            eye_center: Eye center coordinates (x, y)
+            iris_center: Iris center coordinates (x, y)
+            eye_width: Eye width in pixels
+            eye_height: Eye height in pixels
+            
+        Returns:
+            tuple: (direction_status, is_risky, horizontal_ratio, vertical_ratio)
+        """
+        # Normalize by eye dimensions
+        horizontal_ratio = (iris_center[0] - eye_center[0]) / (eye_width / 2 + 1e-6)
+        vertical_ratio = (iris_center[1] - eye_center[1]) / (eye_height / 2 + 1e-6)
+        
+        # Determine direction with priority to vertical
+        if vertical_ratio > self.vertical_down_threshold:
+            return "LOOKING DOWN", True, horizontal_ratio, vertical_ratio
+        elif vertical_ratio < self.vertical_up_threshold:
+            return "LOOKING UP", False, horizontal_ratio, vertical_ratio
+        elif horizontal_ratio > self.horizontal_threshold:
+            return "LOOKING RIGHT", True, horizontal_ratio, vertical_ratio
+        elif horizontal_ratio < -self.horizontal_threshold:
+            return "LOOKING LEFT", True, horizontal_ratio, vertical_ratio
+        else:
+            return "CENTER", False, horizontal_ratio, vertical_ratio
+    
+    def _process_eye(self, landmarks, eye_indices, iris_indices, img_w, img_h, eye_name):
+        """
+        Process eye landmarks to extract eye center, iris center, and dimensions
+        
+        Args:
+            landmarks: List of landmark dicts from FaceDetector with format {'x': int, 'y': int, 'z': float}
+            eye_indices: List of landmark indices for eye contour
+            iris_indices: List of landmark indices for iris
+            img_w: Image width
+            img_h: Image height
+            eye_name: Name of the eye (Left/Right)
+            
+        Returns:
+            dict: Eye data including center, iris position, dimensions, and EAR
+        """
+        # Get eye landmark coordinates (already in pixel coordinates from FaceDetector)
+        eye_points = []
+        for idx in eye_indices:
+            if idx < len(landmarks):
+                point = landmarks[idx]
+                x = point['x']
+                y = point['y']
+                eye_points.append([x, y])
+        
+        eye_points = np.array(eye_points)
+        
+        # Calculate eye center and dimensions
+        eye_center = eye_points.mean(axis=0).astype(int)
+        eye_left = eye_points[:, 0].min()
+        eye_right = eye_points[:, 0].max()
+        eye_top = eye_points[:, 1].min()
+        eye_bottom = eye_points[:, 1].max()
+        
+        eye_width = eye_right - eye_left
+        eye_height = eye_bottom - eye_top
+        
+        # Calculate Eye Aspect Ratio for blink detection
+        ear = self._get_eye_aspect_ratio(eye_points)
+        
+        # Get iris center (landmarks 468-477 are iris points)
+        iris_points = []
+        for idx in iris_indices:
+            if idx < len(landmarks):
+                point = landmarks[idx]
+                x = point['x']
+                y = point['y']
+                iris_points.append([x, y])
+        
+        iris_center = np.array(iris_points).mean(axis=0).astype(int)
+        
+        return {
+            'eye_name': eye_name,
+            'eye_center': eye_center,
+            'iris_center': iris_center,
+            'eye_width': eye_width,
+            'eye_height': eye_height,
+            'eye_points': eye_points,
+            'iris_points': iris_points,
+            'ear': ear,
+            'bbox': (eye_left, eye_top, eye_right, eye_bottom)
+        }
     
     def detect(self, frame, face_meshes):
         """
-        Detect eyes and extract eye data from MediaPipe face mesh
+        Detect eyes and analyze gaze direction from pre-detected face meshes
         
         Args:
             frame: Input frame (BGR)
             face_meshes: List of face mesh data from FaceDetector (must contain 'landmarks')
             
         Returns:
-            list: List of eye detections with landmarks and analysis
+            list: List of eye detections with gaze analysis
         """
         if not self.initialized:
             self.logger.warning("Detector not initialized")
             return []
         
         if not face_meshes:
+            if self.enable_no_face_alert:
+                return [{
+                    'eye_name': 'None',
+                    'status': 'NO FACE',
+                    'is_risky': True,
+                    'alert': True
+                }]
             return []
         
         h, w, _ = frame.shape
-        detections = []
+        all_detections = []
         
         # Process each face mesh
         for face_data in face_meshes:
             landmarks = face_data.get('landmarks')
             
-            if not landmarks or len(landmarks) < 468:
-                self.logger.debug("Face mesh missing landmarks (need at least 468 points)")
+            if not landmarks or len(landmarks) < 478:
+                self.logger.debug("Face mesh missing landmarks (need at least 478 points for iris tracking)")
                 continue
             
-            # Process both eyes
-            for eye_name, eye_indices in [('Left', self.left_eye_indices), ('Right', self.right_eye_indices)]:
-                try:
-                    # Extract eye landmarks
-                    outer = landmarks[eye_indices['outer']]
-                    inner = landmarks[eye_indices['inner']]
-                    top = landmarks[eye_indices['top']]
-                    bottom = landmarks[eye_indices['bottom']]
-                    
-                    # Get iris center if available (landmarks 468-477 for iris)
-                    iris_idx = eye_indices['iris_center']
-                    if iris_idx < len(landmarks):
-                        iris = landmarks[iris_idx]
+            try:
+                # Process both eyes
+                left_eye_data = self._process_eye(
+                    landmarks, 
+                    LEFT_EYE, 
+                    LEFT_IRIS, 
+                    w, h,
+                    'Left'
+                )
+                
+                right_eye_data = self._process_eye(
+                    landmarks, 
+                    RIGHT_EYE, 
+                    RIGHT_IRIS, 
+                    w, h,
+                    'Right'
+                )
+                
+                # Analyze each eye
+                for eye_data in [left_eye_data, right_eye_data]:
+                    # Check if eye is closed
+                    if eye_data['ear'] < self.closed_threshold:
+                        eye_data['status'] = "EYES CLOSED"
+                        eye_data['is_risky'] = False
+                        eye_data['horizontal_ratio'] = 0.0
+                        eye_data['vertical_ratio'] = 0.0
+                        eye_data['alert'] = False
                     else:
-                        # Fallback: estimate iris center from eye corners
-                        iris = {
-                            'x': int((outer['x'] + inner['x']) / 2),
-                            'y': int((outer['y'] + inner['y']) / 2),
-                            'z': 0.0
-                        }
+                        # Determine gaze direction
+                        status, is_risky, h_ratio, v_ratio = self._get_gaze_direction(
+                            eye_data['eye_center'],
+                            eye_data['iris_center'],
+                            eye_data['eye_width'],
+                            eye_data['eye_height']
+                        )
+                        
+                        eye_data['status'] = status
+                        eye_data['is_risky'] = is_risky
+                        eye_data['horizontal_ratio'] = h_ratio
+                        eye_data['vertical_ratio'] = v_ratio
+                        
+                        # Determine if alert should be raised
+                        alert = False
+                        if "LOOKING DOWN" in status and self.enable_looking_down_alert:
+                            alert = True
+                        elif ("LOOKING LEFT" in status or "LOOKING RIGHT" in status) and self.enable_looking_away_alert:
+                            alert = True
+                        
+                        eye_data['alert'] = alert
                     
-                    # Calculate eye bounding box
-                    eye_points = [outer, inner, top, bottom]
-                    x_coords = [p['x'] for p in eye_points]
-                    y_coords = [p['y'] for p in eye_points]
-                    
-                    bbox_x1 = max(0, min(x_coords) - 10)
-                    bbox_y1 = max(0, min(y_coords) - 10)
-                    bbox_x2 = min(w, max(x_coords) + 10)
-                    bbox_y2 = min(h, max(y_coords) + 10)
-                    
-                    # Check if eye is open (vertical distance)
-                    eye_height = abs(top['y'] - bottom['y'])
-                    eye_width = abs(outer['x'] - inner['x'])
-                    
-                    # Eye aspect ratio for blink detection
-                    ear = eye_height / (eye_width + 1e-6)
-                    is_open = ear > 0.15  # Threshold for eye being open
-                    
-                    # Store detection
-                    detection = {
-                        'eye_name': eye_name,
-                        'bbox': (bbox_x1, bbox_y1, bbox_x2, bbox_y2),
-                        'landmarks': {
-                            'outer': (outer['x'], outer['y']),
-                            'inner': (inner['x'], inner['y']),
-                            'top': (top['x'], top['y']),
-                            'bottom': (bottom['x'], bottom['y']),
-                            'iris': (iris['x'], iris['y'])
-                        },
-                        'eye_width': eye_width,
-                        'eye_height': eye_height,
-                        'eye_aspect_ratio': ear,
-                        'is_open': is_open
-                    }
-                    
-                    detections.append(detection)
-                    
-                except Exception as e:
-                    self.logger.debug(f"Error processing {eye_name} eye: {e}")
-                    continue
-
-        return detections 
+                    all_detections.append(eye_data)
+            
+            except Exception as e:
+                self.logger.error(f"Error processing eyes: {e}")
+                continue
+        
+        return all_detections 
+    
     
     def calculate_risk(self, detection):
         """
-        Calculate risk status based on iris/pupil position relative to eye
+        Calculate risk status from detection data (for compatibility with proctor_pipeline)
         
         Args:
-            detection: Detection dictionary with eye landmarks
+            detection: Detection dictionary with eye data
             
         Returns:
             tuple: (status, score, horizontal_ratio, vertical_ratio)
         """
-        try:
-            eye_name = detection['eye_name']
-            
-            # Check if eye is closed
-            if not detection.get('is_open', True):
-                return "EYE CLOSED", 0.0, 0.0, 0.0
-            
-            landmarks = detection['landmarks']
-            outer = landmarks['outer']
-            inner = landmarks['inner']
-            top = landmarks['top']
-            bottom = landmarks['bottom']
-            iris = landmarks['iris']
-            
-            # Calculate eye dimensions
-            eye_width = abs(outer[0] - inner[0]) + 1e-6  # Avoid div/0
-            eye_height = abs(top[1] - bottom[1]) + 1e-6
-            
-            # Eye center (horizontal and vertical)
-            eye_center_x = (outer[0] + inner[0]) / 2
-            eye_center_y = (top[1] + bottom[1]) / 2
-            
-            # Iris position relative to eye center
-            iris_x, iris_y = iris
-            
-            # Vertical ratio: how far up/down from center (normalized by width for consistency)
-            raw_vertical_ratio = (iris_y - eye_center_y) / eye_width
-            
-            # Apply calibration offset
-            calibration_offset = self.calibration_offsets.get(eye_name, 0.0)
-            corrected_vertical_ratio = raw_vertical_ratio - calibration_offset
-            
-            # Horizontal ratio: position along the eye width
-            horizontal_ratio = (iris_x - inner[0]) / eye_width
-            
-            # Determine status
-            decision_ratio = corrected_vertical_ratio
-            threshold = 0.12 if self.is_calibrated else self.vertical_threshold
-            
-            if decision_ratio > threshold:
-                return "LOOKING DOWN (RISK)", decision_ratio, horizontal_ratio, raw_vertical_ratio
-            elif decision_ratio < -threshold:
-                return "LOOKING UP (THINKING)", abs(decision_ratio), horizontal_ratio, raw_vertical_ratio
-            elif horizontal_ratio < self.horizontal_min or horizontal_ratio > self.horizontal_max:
-                return "LOOKING SIDE (RISK)", abs(horizontal_ratio - 0.5) * 2, horizontal_ratio, raw_vertical_ratio
-            else:
-                return "CENTER (SAFE)", 1.0 - abs(decision_ratio), horizontal_ratio, raw_vertical_ratio
+        status = detection.get('status', 'UNKNOWN')
+        is_risky = detection.get('is_risky', False)
+        h_ratio = detection.get('horizontal_ratio', 0.0)
+        v_ratio = detection.get('vertical_ratio', 0.0)
         
-        except Exception as e:
-            self.logger.error(f"Error in risk calculation: {e}")
-            return "Error", 0.0, 0.0, 0.0
+        # Calculate score (0-1, higher = more suspicious)
+        if is_risky:
+            score = max(abs(h_ratio), abs(v_ratio))
+        else:
+            score = 0.0
+        
+        return status, score, h_ratio, v_ratio
     
-    def draw_eye_detection(self, frame, detection, draw_landmarks=True):
+    def _draw_eye_tracking(self, frame, eye_data):
         """
-        Draw eye detection with bounding box and landmarks
+        Draw eye tracking visualization on frame
         
         Args:
             frame: Input frame
-            detection: Detection dictionary with landmarks
-            draw_landmarks: Whether to draw landmarks
+            eye_data: Eye detection data
             
         Returns:
             Annotated frame
         """
-        annotated_frame = frame.copy()
+        is_risky = eye_data.get('is_risky', False)
         
-        # Get risk status color
-        risk_status = detection.get('risk_status', 'SAFE')
-        if "RISK" in risk_status:
-            box_color = self.risk_colors['RISK']
-        elif "THINKING" in risk_status:
-            box_color = self.risk_colors['THINKING']
-        elif "CLOSED" in risk_status:
-            box_color = self.risk_colors['CLOSED']
-        else:
-            box_color = self.risk_colors['SAFE']
+        # Draw eye bounding box
+        x1, y1, x2, y2 = eye_data['bbox']
+        color = self.keypoint_colors['eye_bbox_risk'] if is_risky else self.keypoint_colors['eye_bbox']
+        cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
         
-        # Draw bounding box
-        x1, y1, x2, y2 = detection['bbox']
-        cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), box_color, 2)
+        # Draw eye center
+        cv2.circle(frame, tuple(eye_data['eye_center']), 3, self.keypoint_colors['eye_center'], -1)
         
-        # Draw landmarks
-        if draw_landmarks and detection.get('landmarks'):
-            landmarks = detection['landmarks']
-            
-            # Draw eye corners
-            outer = landmarks['outer']
-            inner = landmarks['inner']
-            top = landmarks['top']
-            bottom = landmarks['bottom']
-            iris = landmarks['iris']
-            
-            # Draw outer and inner corners
-            cv2.circle(annotated_frame, (int(outer[0]), int(outer[1])), 3, self.keypoint_colors['outer'], -1)
-            cv2.circle(annotated_frame, (int(inner[0]), int(inner[1])), 3, self.keypoint_colors['inner'], -1)
-            
-            # Draw top and bottom
-            cv2.circle(annotated_frame, (int(top[0]), int(top[1])), 2, self.keypoint_colors['eye_contour'], -1)
-            cv2.circle(annotated_frame, (int(bottom[0]), int(bottom[1])), 2, self.keypoint_colors['eye_contour'], -1)
-            
-            # Draw iris center (larger)
-            cv2.circle(annotated_frame, (int(iris[0]), int(iris[1])), 4, self.keypoint_colors['iris'], -1)
-            
-            # Draw line between corners
-            cv2.line(annotated_frame, (int(inner[0]), int(inner[1])), 
-                    (int(outer[0]), int(outer[1])), (255, 255, 255), 1)
+        # Draw iris center
+        cv2.circle(frame, tuple(eye_data['iris_center']), 5, self.keypoint_colors['iris_center'], -1)
         
-        # Draw risk status label
-        if 'risk_status' in detection:
-            label = detection['risk_status']
-            score = detection.get('risk_score', 0.0)
-            
-            # Background for label
-            label_text = f"{detection['eye_name']}: {label}"
-            score_text = f"Score: {score:.2f}"
-            
-            cv2.putText(annotated_frame, label_text,
-                       (x1, y1 - 20), cv2.FONT_HERSHEY_SIMPLEX, 
-                       0.5, box_color, 2)
-            cv2.putText(annotated_frame, score_text,
-                       (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 
-                       0.4, box_color, 1)
+        # Draw iris points
+        for point in eye_data['iris_points']:
+            cv2.circle(frame, tuple(point), 2, self.keypoint_colors['iris_points'], -1)
         
-        return annotated_frame
+        # Draw status label
+        status = eye_data.get('status', 'UNKNOWN')
+        label = f"{eye_data['eye_name']}: {status}"
+        cv2.putText(frame, label, (x1, y1 - 10), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+        
+        # Debug mode - show ratios
+        if self.debug_mode:
+            h_ratio = eye_data.get('horizontal_ratio', 0.0)
+            v_ratio = eye_data.get('vertical_ratio', 0.0)
+            ear = eye_data.get('ear', 0.0)
+            
+            cv2.putText(frame, f"H:{h_ratio:.2f} V:{v_ratio:.2f}", (x1, y2 + 15), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1)
+            cv2.putText(frame, f"EAR:{ear:.2f}", (x1, y2 + 30), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1)
+        
+        return frame
+        
+        return frame
     
     def process_frame(self, frame, face_meshes=None, draw=True):
         """
-        Process frame: detect eyes and calculate risk
+        Process frame: detect eyes and calculate gaze direction
         
         Args:
-            frame: Input frame
-            face_meshes: List of face mesh data from FaceDetector (required)
+            frame: Input frame (BGR)
+            face_meshes: Not used (kept for compatibility)
             draw: Whether to draw annotations
             
         Returns:
@@ -392,72 +453,39 @@ class EyeMovementDetector(BaseDetector):
         if not self.enabled:
             return frame, {"enabled": False}
         
-        if face_meshes is None:
-            face_meshes = []
-        
         processed_frame = frame.copy()
         
-        # Detect eyes using face mesh data
+        # Detect eyes and analyze gaze
         detections = self.detect(frame, face_meshes)
         
-        # Handle calibration flag
-        if self.should_calibrate:
-            self.is_calibrated = True
-            self.logger.info("Calibrating eye tracking...")
+        # Draw visualizations
+        if draw and self.draw_landmarks:
+            for detection in detections:
+                if detection.get('eye_name') != 'None':  # Skip "NO FACE" detection
+                    processed_frame = self._draw_eye_tracking(processed_frame, detection)
         
-        # Analyze risk for each detection
-        risk_detections = []
-        
-        for detection in detections:
-            # Calculate risk status
-            status, score, h_ratio, raw_v_ratio = self.calculate_risk(detection)
-            
-            # Perform calibration if requested
-            eye_name = detection['eye_name']
-            if self.should_calibrate:
-                self.calibration_offsets[eye_name] = raw_v_ratio
-                self.logger.info(f"Calibrated {eye_name} eye with offset: {raw_v_ratio:.4f}")
-                
-                # Recalculate with new calibration
-                status, score, h_ratio, raw_v_ratio = self.calculate_risk(detection)
-            
-            # Add risk analysis to detection
-            detection['risk_status'] = status
-            detection['risk_score'] = score
-            detection['horizontal_ratio'] = h_ratio
-            detection['vertical_ratio'] = raw_v_ratio
-            
-            risk_detections.append(detection)
-            
-            # Log eye movement to dedicated logger
-            if self.eye_movement_logger:
-                eye_log_entry = {
-                    'timestamp': datetime.now().isoformat(),
-                    'eye_name': eye_name,
-                    'risk_status': status,
-                    'risk_score': float(score),
-                    'horizontal_ratio': float(h_ratio),
-                    'vertical_ratio': float(raw_v_ratio),
-                    'calibrated': self.is_calibrated,
-                    'calibration_offset': self.calibration_offsets.get(eye_name, 0.0),
-                    'eye_aspect_ratio': float(detection.get('eye_aspect_ratio', 0.0)),
-                    'is_open': detection.get('is_open', True)
-                }
-                self.eye_movement_logger.info(json.dumps(eye_log_entry))
-            
-            # Draw detection
-            if draw:
-                processed_frame = self.draw_eye_detection(processed_frame, detection)
-        
-        if self.should_calibrate:
-            self.should_calibrate = False
+        # Log eye movements if logger is configured
+        if self.eye_movement_logger:
+            for detection in detections:
+                if detection.get('eye_name') != 'None':
+                    eye_log_entry = {
+                        'timestamp': datetime.now().isoformat(),
+                        'eye_name': detection.get('eye_name'),
+                        'status': detection.get('status'),
+                        'is_risky': detection.get('is_risky'),
+                        'horizontal_ratio': float(detection.get('horizontal_ratio', 0.0)),
+                        'vertical_ratio': float(detection.get('vertical_ratio', 0.0)),
+                        'ear': float(detection.get('ear', 0.0)),
+                        'alert': detection.get('alert', False)
+                    }
+                    self.eye_movement_logger.info(json.dumps(eye_log_entry))
         
         # Build results
         detection_results = {
             "detector": self.name,
-            "num_eyes": len(risk_detections),
-            "detections": risk_detections,
-            "calibrated": self.is_calibrated
+            "num_eyes": len([d for d in detections if d.get('eye_name') != 'None']),
+            "detections": detections,
+            "alert": any(d.get('alert', False) for d in detections)
         }
         
         return processed_frame, detection_results
@@ -480,7 +508,8 @@ class EyeMovementDetector(BaseDetector):
                     handler.close()
                     self.eye_movement_logger.removeHandler(handler)
                 
-                self.logger.info(f"Eye movement log saved: {self.eye_log_file}")
+                if self.eye_log_file:
+                    self.logger.info(f"Eye movement log saved: {self.eye_log_file}")
             
             self.initialized = False
             self.logger.info("Eye Movement Detector resources released")

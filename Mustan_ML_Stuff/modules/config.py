@@ -41,8 +41,32 @@ class ProctorConfig:
     SHOW_ALL_FACE_LANDMARKS = True  # Show all 478 face mesh points (set False for key points only)
     SHOW_LANDMARK_NUMBERS = False  # Show landmark index numbers (Warning: lots of text!)
     
-    # Eye Tracking Settings
+    # Eye Tracking Settings (MediaPipe)
     EYE_TRACKING_ENABLE = True  # Enable eye movement detection and tracking (MediaPipe-based)
+    
+    # Eye Detection Thresholds
+    EYE_HORIZONTAL_THRESHOLD = 0.30  # Looking left/right threshold (iris position ratio)
+    EYE_VERTICAL_DOWN_THRESHOLD = 0.10  # Looking down threshold (iris position ratio)
+    EYE_VERTICAL_UP_THRESHOLD = -0.30  # Looking up threshold (iris position ratio)
+    EYE_CLOSED_THRESHOLD = 0.15  # Eye Aspect Ratio (EAR) threshold for closed eyes
+    
+    # Eye Tracking MediaPipe Settings
+    EYE_FACE_DETECTION_CONFIDENCE = 0.5  # Minimum confidence for face detection
+    EYE_FACE_PRESENCE_CONFIDENCE = 0.5  # Minimum confidence for face presence
+    EYE_TRACKING_CONFIDENCE = 0.5  # Minimum confidence for tracking
+    
+    # Eye Tracking Model
+    EYE_TRACKING_MODEL_PATH = "cv_models/face_landmarker.task"  # MediaPipe face landmarker model
+    EYE_TRACKING_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
+    
+    # Eye Tracking Visualization
+    EYE_DRAW_LANDMARKS = True  # Draw eye bounding boxes and iris tracking
+    EYE_DEBUG_MODE = False  # Show ratios and thresholds on screen
+    
+    # Eye Tracking Alerts
+    EYE_ENABLE_LOOKING_DOWN_ALERT = True  # Alert when looking down
+    EYE_ENABLE_LOOKING_AWAY_ALERT = True  # Alert when looking left/right
+    EYE_ENABLE_NO_FACE_ALERT = True  # Alert when no face detected for eye tracking
     
     # Face Matching Settings (DeepFace)
     FACE_MATCH_ENABLE = True  # Enable face verification against participant
